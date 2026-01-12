@@ -43,7 +43,6 @@ jobs:
           submodules: true
           ref: v${{ env.ONNXRUNTIME_VERSION }}
 
-
       - name: cache-toolchain
         id: cache-toolchain
         uses: actions/cache@v3
@@ -55,7 +54,7 @@ jobs:
         if: steps.cache-toolchain.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          curl -SL -Ohttps://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/arm-linux-gnueabihf/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz
+          curl -SL -O https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/arm-linux-gnueabihf/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz
           git lfs install
           mkdir $GITHUB_WORKSPACE/toolchain
 
