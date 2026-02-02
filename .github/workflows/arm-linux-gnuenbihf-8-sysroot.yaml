@@ -35,14 +35,10 @@ jobs:
           path: onnxruntime-linux-arm-sysroot-${{ env.ONNXRUNTIME_VERSION }}
           key: onnxruntime-arm-linux-sysroot-${{ env.ONNXRUNTIME_VERSION }}-cache-v1
 
-      - name: Extract sysroot
+      - name: Save sysroot tarball
         shell: bash
         run: |
-          mkdir -p $GITHUB_WORKSPACE/sysroot
-          tar xzf onnx-sysroot-arm32.tar.gz -C $GITHUB_WORKSPACE/sysroot
-          echo "SYSROOT=$GITHUB_WORKSPACE/sysroot" >> "$GITHUB_ENV"
-          ls -lh $GITHUB_WORKSPACE/sysroot
-          tree $GITHUB_WORKSPACE/sysroot || find $GITHUB_WORKSPACE/sysroot -type f | head -50
+          cp onnx-sysroot-arm32.tar.gz /tmp/onnx-sysroot-arm32.tar.gz
 
       - name: Checkout onnxruntime
         if: steps.cache-build-result.outputs.cache-hit != 'true'
@@ -51,6 +47,15 @@ jobs:
           repository: microsoft/onnxruntime
           submodules: true
           ref: v${{ env.ONNXRUNTIME_VERSION }}
+
+      - name: Extract sysroot
+        shell: bash
+        run: |
+          mkdir -p $GITHUB_WORKSPACE/sysroot
+          tar xzf /tmp/onnx-sysroot-arm32.tar.gz -C $GITHUB_WORKSPACE/sysroot --strip-components=1
+          echo "SYSROOT=$GITHUB_WORKSPACE/sysroot" >> "$GITHUB_ENV"
+          ls -lh $GITHUB_WORKSPACE/sysroot
+          tree $GITHUB_WORKSPACE/sysroot || find $GITHUB_WORKSPACE/sysroot -type f | head -50
 
       - name: cache-toolchain
         id: cache-toolchain
@@ -174,6 +179,16 @@ jobs:
           # Use sysroot for cross-compilation to ensure compatibility with older GLIBC versions
           SYSROOT_PATH=$GITHUB_WORKSPACE/sysroot
 
+          # Verify sysroot structure
+          echo "Checking sysroot structure..."
+          ls -la $SYSROOT_PATH/
+          ls -la $SYSROOT_PATH/lib/ | head -20
+          ls -la $SYSROOT_PATH/usr/lib/ | head -20 || true
+
+          # Find crt1.o location
+          find $SYSROOT_PATH -name "crt1.o" 2>/dev/null || echo "crt1.o not found in sysroot"
+          find $SYSROOT_PATH -name "crti.o" 2>/dev/null || echo "crti.o not found in sysroot"
+
           python3 ./tools/ci_build/build.py \
             $extra_opts \
             --build_dir $build_dir \
@@ -189,10 +204,11 @@ jobs:
             --cmake_extra_defines CMAKE_SYSTEM_PROCESSOR=armv7l \
             --cmake_extra_defines CMAKE_POLICY_VERSION_MINIMUM=3.5 \
             --cmake_extra_defines CMAKE_SYSROOT=$SYSROOT_PATH \
-            --cmake_extra_defines CMAKE_C_FLAGS="--sysroot=$SYSROOT_PATH -I$SYSROOT_PATH/usr/include" \
-            --cmake_extra_defines CMAKE_CXX_FLAGS="--sysroot=$SYSROOT_PATH -I$SYSROOT_PATH/usr/include" \
-            --cmake_extra_defines CMAKE_EXE_LINKER_FLAGS="--sysroot=$SYSROOT_PATH -L$SYSROOT_PATH/lib -L$SYSROOT_PATH/usr/lib" \
-            --cmake_extra_defines CMAKE_SHARED_LINKER_FLAGS="--sysroot=$SYSROOT_PATH -L$SYSROOT_PATH/lib -L$SYSROOT_PATH/usr/lib" \
+            --cmake_extra_defines CMAKE_FIND_ROOT_PATH=$SYSROOT_PATH \
+            --cmake_extra_defines CMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
+            --cmake_extra_defines CMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
+            --cmake_extra_defines CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
+            --cmake_extra_defines CMAKE_FIND_ROOT_PATH_MODE_PACKAGE=ONLY \
             --target install \
             --parallel \
             --skip_tests
