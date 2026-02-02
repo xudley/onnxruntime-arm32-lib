@@ -182,12 +182,14 @@ jobs:
           # Verify sysroot structure
           echo "Checking sysroot structure..."
           ls -la $SYSROOT_PATH/
-          ls -la $SYSROOT_PATH/lib/ | head -20
-          ls -la $SYSROOT_PATH/usr/lib/ | head -20 || true
+          echo "--- lib directory ---"
+          ls -la $SYSROOT_PATH/lib/*.o 2>/dev/null || true
+          echo "--- usr/lib directory ---"
+          ls -la $SYSROOT_PATH/usr/lib/*.o 2>/dev/null || true
 
           # Find crt1.o location
-          find $SYSROOT_PATH -name "crt1.o" 2>/dev/null || echo "crt1.o not found in sysroot"
-          find $SYSROOT_PATH -name "crti.o" 2>/dev/null || echo "crti.o not found in sysroot"
+          echo "Searching for crt files..."
+          find $SYSROOT_PATH -name "crt*.o" 2>/dev/null || echo "crt*.o not found in sysroot"
 
           python3 ./tools/ci_build/build.py \
             $extra_opts \
