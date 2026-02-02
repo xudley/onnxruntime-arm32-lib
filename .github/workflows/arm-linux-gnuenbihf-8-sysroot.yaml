@@ -107,6 +107,25 @@ jobs:
           echo "Verifying crt files in sysroot..."
           ls -la $SYSROOT_PATH/usr/lib/crt*.o 2>/dev/null || echo "WARNING: crt files still not found"
 
+          # Copy iconv related files from toolchain to sysroot
+          echo "Searching for iconv files in toolchain..."
+          find $TOOLCHAIN_PATH -name "*iconv*" 2>/dev/null || true
+
+          # Copy iconv header
+          TOOLCHAIN_INCLUDE="$TOOLCHAIN_PATH/arm-linux-gnueabihf/libc/usr/include"
+          if [ -f "$TOOLCHAIN_INCLUDE/iconv.h" ]; then
+            echo "Copying iconv.h from $TOOLCHAIN_INCLUDE..."
+            mkdir -p $SYSROOT_PATH/usr/include
+            cp -v $TOOLCHAIN_INCLUDE/iconv.h $SYSROOT_PATH/usr/include/ 2>/dev/null || true
+          fi
+
+          # Copy libc.so and related files (iconv is usually built into glibc)
+          TOOLCHAIN_LIB="$TOOLCHAIN_PATH/arm-linux-gnueabihf/libc/lib"
+          if [ -d "$TOOLCHAIN_LIB" ]; then
+            echo "Checking libc in $TOOLCHAIN_LIB..."
+            ls -la $TOOLCHAIN_LIB/libc* 2>/dev/null | head -10 || true
+          fi
+
       - name: Download protoc
         if: steps.cache-build-result.outputs.cache-hit != 'true'
         shell: bash
@@ -239,6 +258,7 @@ jobs:
             --cmake_extra_defines CMAKE_POLICY_VERSION_MINIMUM=3.5 \
             --cmake_extra_defines CMAKE_SYSROOT=$SYSROOT_PATH \
             --cmake_extra_defines CMAKE_FIND_ROOT_PATH=$SYSROOT_PATH \
+            --cmake_extra_defines Iconv_IS_BUILT_IN=ON \
             --cmake_extra_defines CMAKE_FIND_ROOT_PATH_MODE_PROGRAM=NEVER \
             --cmake_extra_defines CMAKE_FIND_ROOT_PATH_MODE_LIBRARY=ONLY \
             --cmake_extra_defines CMAKE_FIND_ROOT_PATH_MODE_INCLUDE=ONLY \
