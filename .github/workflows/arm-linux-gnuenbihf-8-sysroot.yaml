@@ -75,56 +75,77 @@ jobs:
           tar xvf ./gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz --strip-components 1 -C $GITHUB_WORKSPACE/toolchain
           rm -v gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz
 
-      - name: Copy crt files from toolchain to sysroot
+      - name: Prepare sysroot with old glibc headers
         shell: bash
         run: |
           SYSROOT_PATH=$GITHUB_WORKSPACE/sysroot
           TOOLCHAIN_PATH=$GITHUB_WORKSPACE/toolchain
 
-          # Create usr/lib directory if it doesn't exist
-          mkdir -p $SYSROOT_PATH/usr/lib
+          # Check the glibc version in sysroot
+          echo "Checking glibc version in sysroot..."
+          ls -la $SYSROOT_PATH/lib/libc* 2>/dev/null || true
+          strings $SYSROOT_PATH/lib/libc.so.6 2>/dev/null | grep -i "glibc" | head -5 || true
 
-          # Find and copy crt*.o files from toolchain to sysroot
-          echo "Searching for crt files in toolchain..."
-          find $TOOLCHAIN_PATH -name "crt*.o" 2>/dev/null
+          echo "Checking sysroot usr/include..."
+          if [ -d "$SYSROOT_PATH/usr/include" ] && [ -f "$SYSROOT_PATH/usr/include/features.h" ]; then
+            echo "usr/include with headers exists in sysroot"
+            ls -la $SYSROOT_PATH/usr/include/ | head -20
+          else
+            echo "Headers missing in sysroot, downloading gcc-linaro-4.9.4 to get old glibc headers..."
 
-          # Copy crt files from toolchain's libc directory
-          TOOLCHAIN_LIBC="$TOOLCHAIN_PATH/arm-linux-gnueabihf/libc/usr/lib"
-          if [ -d "$TOOLCHAIN_LIBC" ]; then
-            echo "Copying crt files from $TOOLCHAIN_LIBC..."
-            cp -v $TOOLCHAIN_LIBC/crt*.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
-            cp -v $TOOLCHAIN_LIBC/Scrt1.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+            # Download gcc-linaro-4.9.4 which has old glibc 2.19
+            curl -SL -O https://releases.linaro.org/components/toolchain/binaries/4.9-2017.01/arm-linux-gnueabihf/gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz
+            mkdir -p /tmp/linaro-toolchain
+            tar xf gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz --strip-components=1 -C /tmp/linaro-toolchain
+            rm -f gcc-linaro-4.9.4-2017.01-x86_64_arm-linux-gnueabihf.tar.xz
+
+            # Copy headers from linaro's old glibc sysroot
+            LINARO_INCLUDE="/tmp/linaro-toolchain/arm-linux-gnueabihf/libc/usr/include"
+            if [ -d "$LINARO_INCLUDE" ]; then
+              echo "Copying old glibc headers from linaro toolchain..."
+              mkdir -p $SYSROOT_PATH/usr/include
+              cp -rv $LINARO_INCLUDE/* $SYSROOT_PATH/usr/include/
+              echo "Copied headers. Checking glibc version in headers..."
+              grep -r "GLIBC" $SYSROOT_PATH/usr/include/features.h | head -5 || true
+            fi
+
+            # Also copy crt files from linaro's old libc (these match the old glibc)
+            LINARO_LIB="/tmp/linaro-toolchain/arm-linux-gnueabihf/libc/usr/lib"
+            if [ -d "$LINARO_LIB" ]; then
+              echo "Copying crt files from linaro toolchain (matches old glibc)..."
+              mkdir -p $SYSROOT_PATH/usr/lib
+              cp -v $LINARO_LIB/crt*.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+              cp -v $LINARO_LIB/Scrt1.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+            fi
+
+            # Cleanup
+            rm -rf /tmp/linaro-toolchain
           fi
 
-          # Also try alternate location
-          TOOLCHAIN_LIBC_ALT="$TOOLCHAIN_PATH/lib/gcc/arm-linux-gnueabihf/8.3.0"
-          if [ -d "$TOOLCHAIN_LIBC_ALT" ]; then
-            echo "Copying crt files from $TOOLCHAIN_LIBC_ALT..."
-            cp -v $TOOLCHAIN_LIBC_ALT/crt*.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+          # If still no crt files, copy from gcc 8.3 toolchain (fallback)
+          if [ ! -f "$SYSROOT_PATH/usr/lib/crt1.o" ]; then
+            echo "crt1.o not found, copying from gcc 8.3 toolchain as fallback..."
+            mkdir -p $SYSROOT_PATH/usr/lib
+            TOOLCHAIN_LIBC="$TOOLCHAIN_PATH/arm-linux-gnueabihf/libc/usr/lib"
+            if [ -d "$TOOLCHAIN_LIBC" ]; then
+              cp -v $TOOLCHAIN_LIBC/crt*.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+              cp -v $TOOLCHAIN_LIBC/Scrt1.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+            fi
+            TOOLCHAIN_LIBC_ALT="$TOOLCHAIN_PATH/lib/gcc/arm-linux-gnueabihf/8.3.0"
+            if [ -d "$TOOLCHAIN_LIBC_ALT" ]; then
+              cp -v $TOOLCHAIN_LIBC_ALT/crt*.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+            fi
           fi
 
-          # Verify crt files are now in sysroot
-          echo "Verifying crt files in sysroot..."
-          ls -la $SYSROOT_PATH/usr/lib/crt*.o 2>/dev/null || echo "WARNING: crt files still not found"
+          # Verify final state
+          echo "=== Final sysroot verification ==="
+          echo "Headers:"
+          ls -la $SYSROOT_PATH/usr/include/features.h 2>/dev/null || echo "WARNING: features.h not found"
+          echo "CRT files:"
+          ls -la $SYSROOT_PATH/usr/lib/crt*.o 2>/dev/null || echo "WARNING: crt files not found"
+          echo "Libraries:"
+          ls -la $SYSROOT_PATH/lib/libc* 2>/dev/null || true
 
-          # Copy iconv related files from toolchain to sysroot
-          echo "Searching for iconv files in toolchain..."
-          find $TOOLCHAIN_PATH -name "*iconv*" 2>/dev/null || true
-
-          # Copy iconv header
-          TOOLCHAIN_INCLUDE="$TOOLCHAIN_PATH/arm-linux-gnueabihf/libc/usr/include"
-          if [ -f "$TOOLCHAIN_INCLUDE/iconv.h" ]; then
-            echo "Copying iconv.h from $TOOLCHAIN_INCLUDE..."
-            mkdir -p $SYSROOT_PATH/usr/include
-            cp -v $TOOLCHAIN_INCLUDE/iconv.h $SYSROOT_PATH/usr/include/ 2>/dev/null || true
-          fi
-
-          # Copy libc.so and related files (iconv is usually built into glibc)
-          TOOLCHAIN_LIB="$TOOLCHAIN_PATH/arm-linux-gnueabihf/libc/lib"
-          if [ -d "$TOOLCHAIN_LIB" ]; then
-            echo "Checking libc in $TOOLCHAIN_LIB..."
-            ls -la $TOOLCHAIN_LIB/libc* 2>/dev/null | head -10 || true
-          fi
 
       - name: Download protoc
         if: steps.cache-build-result.outputs.cache-hit != 'true'
