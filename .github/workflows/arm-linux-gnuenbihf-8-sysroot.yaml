@@ -75,6 +75,38 @@ jobs:
           tar xvf ./gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz --strip-components 1 -C $GITHUB_WORKSPACE/toolchain
           rm -v gcc-arm-8.3-2019.03-x86_64-arm-linux-gnueabihf.tar.xz
 
+      - name: Copy crt files from toolchain to sysroot
+        shell: bash
+        run: |
+          SYSROOT_PATH=$GITHUB_WORKSPACE/sysroot
+          TOOLCHAIN_PATH=$GITHUB_WORKSPACE/toolchain
+
+          # Create usr/lib directory if it doesn't exist
+          mkdir -p $SYSROOT_PATH/usr/lib
+
+          # Find and copy crt*.o files from toolchain to sysroot
+          echo "Searching for crt files in toolchain..."
+          find $TOOLCHAIN_PATH -name "crt*.o" 2>/dev/null
+
+          # Copy crt files from toolchain's libc directory
+          TOOLCHAIN_LIBC="$TOOLCHAIN_PATH/arm-linux-gnueabihf/libc/usr/lib"
+          if [ -d "$TOOLCHAIN_LIBC" ]; then
+            echo "Copying crt files from $TOOLCHAIN_LIBC..."
+            cp -v $TOOLCHAIN_LIBC/crt*.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+            cp -v $TOOLCHAIN_LIBC/Scrt1.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+          fi
+
+          # Also try alternate location
+          TOOLCHAIN_LIBC_ALT="$TOOLCHAIN_PATH/lib/gcc/arm-linux-gnueabihf/8.3.0"
+          if [ -d "$TOOLCHAIN_LIBC_ALT" ]; then
+            echo "Copying crt files from $TOOLCHAIN_LIBC_ALT..."
+            cp -v $TOOLCHAIN_LIBC_ALT/crt*.o $SYSROOT_PATH/usr/lib/ 2>/dev/null || true
+          fi
+
+          # Verify crt files are now in sysroot
+          echo "Verifying crt files in sysroot..."
+          ls -la $SYSROOT_PATH/usr/lib/crt*.o 2>/dev/null || echo "WARNING: crt files still not found"
+
       - name: Download protoc
         if: steps.cache-build-result.outputs.cache-hit != 'true'
         shell: bash
