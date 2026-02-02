@@ -105,8 +105,15 @@ jobs:
               echo "Copying old glibc headers from linaro toolchain..."
               mkdir -p $SYSROOT_PATH/usr/include
               cp -rv $LINARO_INCLUDE/* $SYSROOT_PATH/usr/include/
-              echo "Copied headers. Checking glibc version in headers..."
-              grep -r "GLIBC" $SYSROOT_PATH/usr/include/features.h | head -5 || true
+
+              # Fix the isinf/isnan conflict between old glibc and GCC 8.3 C++ stdlib
+              # Comment out the conflicting declarations in old glibc's mathcalls.h
+              echo "Patching mathcalls.h to avoid isinf/isnan conflicts with C++11..."
+              if [ -f "$SYSROOT_PATH/usr/include/bits/mathcalls.h" ]; then
+                sed -i 's/^__MATHDECL_1 (int,isinf,,/\/\/ PATCHED: __MATHDECL_1 (int,isinf,,/' $SYSROOT_PATH/usr/include/bits/mathcalls.h
+                sed -i 's/^__MATHDECL_1 (int,isnan,,/\/\/ PATCHED: __MATHDECL_1 (int,isnan,,/' $SYSROOT_PATH/usr/include/bits/mathcalls.h
+                echo "Patched mathcalls.h"
+              fi
             fi
 
             # Also copy crt files from linaro's old libc (these match the old glibc)
@@ -143,7 +150,7 @@ jobs:
           ls -la $SYSROOT_PATH/usr/include/features.h 2>/dev/null || echo "WARNING: features.h not found"
           echo "CRT files:"
           ls -la $SYSROOT_PATH/usr/lib/crt*.o 2>/dev/null || echo "WARNING: crt files not found"
-          echo "Libraries:"
+          echo "Libraries (from original sysroot - old glibc):"
           ls -la $SYSROOT_PATH/lib/libc* 2>/dev/null || true
 
 
